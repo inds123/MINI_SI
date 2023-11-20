@@ -20,11 +20,22 @@ typedef struct
 } Token;
 
 // Function that creates the keyword list
+const char* keywords[] = 
+{
+    "if",
+    "else",
+    "for",
+    "while",
+    "read",
+    "write",
+    // Add other keywords as needed
+};
 
 
 // Function that checks whether the string is a keyword
-int isMini_Si(const char* str) {
-    return !strcmp(str, "write") || !strcmp(str, "if") || !strcmp(str, "else")|| !strcmp(str, "read");
+int isMini_Si(const char* str) 
+{
+    
 }
 
 

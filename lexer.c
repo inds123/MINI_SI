@@ -62,7 +62,7 @@ void skipWhitespace(Lexer* lexer) { // (ADLT) Change function name to skip_white
 Token get_token(Lexer* lexer) {
     Token token;
     token.value = NULL;
-    // Check for COMPLAIN token 
+    // Check for COMPLAIN token
     // (ADLT) checking for the multiple tokens not just "COMPLAIN"
     // (ADLT) We assume that each command starts with a different letter or no 2 commands start with the same letter
     switch (lexer->word[0]) {
@@ -111,7 +111,7 @@ Token get_token(Lexer* lexer) {
 }
 
 // AST Node structure
-typedef struct ASTNode {
+typedef struct {
     Token token;
     TreeNodeType type;
     struct ASTNode* nextNode;
@@ -158,7 +158,7 @@ void printAST(ASTNode* node, int depth) {
         "MESSAGE_TYPE",
         "ARGUMENT_TYPE",
         "UNKNOWN_TYPE"
-        
+
     };
 
     // Array of tree node types
@@ -172,10 +172,10 @@ void printAST(ASTNode* node, int depth) {
     for (int i = 0; i < depth; i++) {
         printf("  ");
     }
-    printf("Node Type: %s, Token Name: %s, Token Type: %s, Value: %s\n", 
+    printf("Node Type: %s, Token Name: %s, Token Type: %s, Value: %s\n",
            treeNodeTypes[node->type],
-           tokenNames[node->token.name], 
-           tokenTypes[node->token.type], 
+           tokenNames[node->token.name],
+           tokenTypes[node->token.type],
            node->token.value);
 
     // Print all child nodes
@@ -186,6 +186,7 @@ void printAST(ASTNode* node, int depth) {
 
 // Function to advance the lexer to the next character
 // (ADLT) Advance to the next character or the next word?
+// Function to advance the lexer to the next character
 int advanceLexer(Lexer* lexer, Token** token_list, int* num_tokens) {
     while (lexer->position < strlen(lexer->contents)) {
         if (lexer->current_char == ' ' || lexer->current_char == '\t' || lexer->current_char == '\n') {
@@ -193,35 +194,72 @@ int advanceLexer(Lexer* lexer, Token** token_list, int* num_tokens) {
         } else if (lexer->current_char == '(') {
             // Reset the word for the next token
             strcpy(lexer->word, "");
-
             // Skip the '(' character
             lexer->position++;
             lexer->current_char = lexer->contents[lexer->position];
 
-            // Read everything until ')'
-            while (lexer->current_char != ')' && lexer->current_char != '\0') {
-                char char_str[2] = {lexer->current_char, '\0'};
-                strcat(lexer->word, char_str);
+            // if string
+            if (lexer->current_char == '"') {
                 lexer->position++;
                 lexer->current_char = lexer->contents[lexer->position];
-            }
 
-            // Include the ')' in the word
-            // Is the comment above correct? I dont think the ')' is being included in the word but it is creating a message token
-            if (lexer->current_char == ')') {
-                Token this_token;
-                this_token.name = MESSAGE;
-                this_token.type = MESSAGE_TYPE;
-                this_token.value = strdup(lexer->word);
-                (*token_list)[*num_tokens] = this_token;
-                (*num_tokens)++;
+                while (lexer->current_char != '"' && lexer->current_char != '\0') {
+                    char char_str[2] = {lexer->current_char, '\0'};
+                    strcat(lexer->word, char_str);
+                    lexer->position++;
+                    lexer->current_char = lexer->contents[lexer->position];
+                }
 
-                // Move to the next character after ')'
-                lexer->position++;
-                lexer->current_char = lexer->contents[lexer->position];
+                int position_curr = lexer->position;
+                position_curr++;
+                char next_char = lexer->contents[position_curr];
+
+
+                if (lexer->current_char == '"' && next_char == ')') {
+                    Token this_token;
+                    this_token.name = MESSAGE;
+                    this_token.type = MESSAGE_TYPE;
+                    this_token.value = strdup(lexer->word);
+                    (*token_list)[*num_tokens] = this_token;
+                    (*num_tokens)++;
+
+                    // Move to the next character after '"'
+                    lexer->position++;
+                    lexer->position++;
+                    lexer->current_char = lexer->contents[lexer->position];
+
+                } else {
+                    printf("ERROR: Expected """ "but found EOF\n");
+                    return 0;
+                }
+
             } else {
-                printf("ERROR: Expected ')' but found EOF\n");
-                return 0;
+                // Read everything until ')'
+                while (lexer->current_char != ')' && lexer->current_char != '\0') {
+                    char char_str[2] = {lexer->current_char, '\0'};
+                    strcat(lexer->word, char_str);
+                    lexer->position++;
+                    lexer->current_char = lexer->contents[lexer->position];
+                }
+
+                // Find ")"
+                if (lexer->current_char == ')') {
+                    Token this_token;
+                    this_token.name = ARGUMENT;
+                    this_token.type = ARGUMENT_TYPE;
+                    this_token.value = strdup(lexer->word);
+                    (*token_list)[*num_tokens] = this_token;
+                    (*num_tokens)++;
+
+                    // Move to the next character after ')'
+                    lexer->position++;
+                    lexer->position++;
+                    lexer->current_char = lexer->contents[lexer->position];
+
+                } else {
+                    printf("ERROR: Expected ')' but found EOF\n");
+                    return 0;
+                }
             }
 
         } else {
@@ -247,7 +285,6 @@ int advanceLexer(Lexer* lexer, Token** token_list, int* num_tokens) {
     }
     return 1;
 }
-
 // Function to parse tokens into an AST
 ASTNode* parseTokensIntoAST(Token* token_list, int num_tokens) {
     // Create the root node
@@ -256,25 +293,31 @@ ASTNode* parseTokensIntoAST(Token* token_list, int num_tokens) {
     // Keep track of the current parent node
     ASTNode* currentParent = root;
 
+    ASTNode *newNode;
     for (int i = 0; i < num_tokens; ++i) {
         // Depending on the type of the token, add it to the AST
         switch (token_list[i].type) {
             case COMMAND:
                 // Create a new node for the current token
-                ASTNode* newNode = newASTNode(token_list[i], CHILD);
+                newNode = newASTNode(token_list[i], CHILD);
                 // Add the new node as a child of the root
                 addChildNode(root, newNode);
                 // The new node is now the current parent for ARGUMENT and MESSAGE_TYPE tokens
                 currentParent = newNode;
                 break;
-            case ARGUMENT:
             case MESSAGE_TYPE:
+                // Create a new node for the new token
+                newNode = newASTNode(token_list[i], CHILD);
+                // Add the new node as a child of the current parent
+                addChildNode(currentParent, newNode);
+                break;
+            case ARGUMENT_TYPE:
                 // If the token value contains a comma, split it into multiple tokens
                 if (strchr(token_list[i].value, ',') != NULL) {
                     char* value = strtok(token_list[i].value, ",");
                     while (value != NULL) {
                         Token newToken = {ARGUMENT, ARGUMENT_TYPE, value};
-                        ASTNode* newNode = newASTNode(newToken, CHILD);
+                        newNode = newASTNode(newToken, CHILD);
                         addChildNode(currentParent, newNode);
                         value = strtok(NULL, ",");
                     }
@@ -282,15 +325,15 @@ ASTNode* parseTokensIntoAST(Token* token_list, int num_tokens) {
                     // Create a new token with the correct type
                     Token newToken = {ARGUMENT, ARGUMENT_TYPE, token_list[i].value};
                     // Create a new node for the new token
-                    ASTNode* newNode = newASTNode(newToken, CHILD);
+                    newNode = newASTNode(newToken, CHILD);
                     // Add the new node as a child of the current parent
                     addChildNode(currentParent, newNode);
                 }
                 break;
             default:
                 // For unknown types, just add the new node as a child of the root
-                ASTNode* newNodeChild = newASTNode(token_list[i], CHILD);
-                addChildNode(root, newNodeChild);
+                newNode = newASTNode(token_list[i], CHILD);
+                addChildNode(root, newNode);
                 break;
         }
     }
@@ -334,7 +377,7 @@ int main() {
     long file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    char* contents = (char*)calloc(file_size, sizeof(char));
+    char* contents = (char*)malloc(file_size * sizeof(char));
     if (contents == NULL) {
         printf("Memory allocation error for contents\n");
         fclose(fp);
@@ -451,6 +494,8 @@ int main() {
                 }
                 break;
             case MESSAGE:
+                break;
+            case ARGUMENT:
                 break;
             default:
                 printf("Unknown token encountered.\n");

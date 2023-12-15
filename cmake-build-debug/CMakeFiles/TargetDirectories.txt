@@ -1,0 +1,3 @@
+/Users/isabeldevalenzuela/Desktop/c_language/MINI_SI/cmake-build-debug/CMakeFiles/MINI_SI.dir
+/Users/isabeldevalenzuela/Desktop/c_language/MINI_SI/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/isabeldevalenzuela/Desktop/c_language/MINI_SI/cmake-build-debug/CMakeFiles/rebuild_cache.dir

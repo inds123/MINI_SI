@@ -7,7 +7,7 @@ typedef enum {
     PRINT,
     SET,
     ADD,
-    ISZERO, // (ADLT) Instead of IFZERO, it would be clearer to name it ISZERO or ISZEROCHECK
+    ISEQUAL,
     COMPLAIN,
     UNKNOWN,
     MESSAGE,
@@ -21,9 +21,21 @@ typedef enum {
     UNKNOWN_TYPE
 } TokenType;
 
+// Define token names globally
+char* tokenNames[] = {
+        "PRINT",
+        "SET",
+        "ADD",
+        "ISEQUAL",
+        "COMPLAIN",
+        "UNKNOWN",
+        "MESSAGE",
+        "ARGUMENT"
+};
+
 typedef enum {
     ROOT,
-    CHILD
+    CHILD,
 } TreeNodeType;
 
 // Token structure
@@ -44,7 +56,7 @@ typedef struct {
 // Function to initialize a Lexer
 void initializeLexer(Lexer* lexer, const char* input) {
     strcpy(lexer->contents, input);
-    lexer->current_char = input[0]; // (ADLT) Why not lexer->contents[0]?
+    lexer->current_char = input[0];
     lexer->word = malloc(sizeof(char) * 1000);
     lexer->word[0] = '\0';
     lexer->position = 0;
@@ -62,9 +74,7 @@ void skipWhitespace(Lexer* lexer) { // (ADLT) Change function name to skip_white
 Token get_token(Lexer* lexer) {
     Token token;
     token.value = NULL;
-    // Check for COMPLAIN token
-    // (ADLT) checking for the multiple tokens not just "COMPLAIN"
-    // (ADLT) We assume that each command starts with a different letter or no 2 commands start with the same letter
+    // Check the first character of the word for the switch statement then compare the rest
     switch (lexer->word[0]) {
         case 'P':
             if (strcmp(lexer->word, "PRINT") == 0) {
@@ -88,10 +98,10 @@ Token get_token(Lexer* lexer) {
             }
             break;
         case 'I':
-            if (strcmp(lexer->word, "ISZERO") == 0) {
-                token.name = ISZERO;
+            if (strcmp(lexer->word, "ISEQUAL") == 0) {
+                token.name = ISEQUAL;
                 token.type = COMMAND;
-                token.value = strdup("IsZero");
+                token.value = strdup("IsEqual");
             }
             break;
         case 'C':
@@ -121,7 +131,7 @@ typedef struct {
 
 // Function to create a new AST Node
 ASTNode* newASTNode(Token token, TreeNodeType nodeType) {
-    ASTNode* node = (ASTNode*) malloc(sizeof(ASTNode));
+    ASTNode* node = (ASTNode*)calloc(1, sizeof(ASTNode));
     node->token = token;
     node->type = nodeType;
     node->nextNode = NULL;
@@ -134,18 +144,21 @@ ASTNode* newASTNode(Token token, TreeNodeType nodeType) {
 void addChildNode(ASTNode* parentNode, ASTNode* childNode) {
     parentNode->numChildNodes++;
     parentNode->childNodes = realloc(parentNode->childNodes, parentNode->numChildNodes * sizeof(ASTNode*));
+    if (parentNode->childNodes == NULL) {
+        printf("Memory allocation error for child nodes\n");
+        exit(1);
+    }
     parentNode->childNodes[parentNode->numChildNodes - 1] = childNode;
 }
 
 // Function to print the AST tree
 void printAST(ASTNode* node, int depth) {
-
     // Array of token names
     char* tokenNames[] = {
         "PRINT",
         "SET",
         "ADD",
-        "ISZERO",
+        "ISEQUAL",
         "COMPLAIN",
         "UNKNOWN",
         "MESSAGE",
@@ -162,9 +175,9 @@ void printAST(ASTNode* node, int depth) {
     };
 
     // Array of tree node types
-    char* treeNodeTypes[] = {
-        "ROOT",
-        "CHILD"
+    char* NodeTypes[] = {
+            "ROOT",
+            "CHILD"
         // Add more node types as needed
     };
 
@@ -172,8 +185,9 @@ void printAST(ASTNode* node, int depth) {
     for (int i = 0; i < depth; i++) {
         printf("  ");
     }
+
     printf("Node Type: %s, Token Name: %s, Token Type: %s, Value: %s\n",
-           treeNodeTypes[node->type],
+           NodeTypes[node->type],
            tokenNames[node->token.name],
            tokenTypes[node->token.type],
            node->token.value);
@@ -184,9 +198,7 @@ void printAST(ASTNode* node, int depth) {
     }
 }
 
-// Function to advance the lexer to the next character
-// (ADLT) Advance to the next character or the next word?
-// Function to advance the lexer to the next character
+// Function to advance the lexer to the next word
 int advanceLexer(Lexer* lexer, Token** token_list, int* num_tokens) {
     while (lexer->position < strlen(lexer->contents)) {
         if (lexer->current_char == ' ' || lexer->current_char == '\t' || lexer->current_char == '\n') {
@@ -288,7 +300,8 @@ int advanceLexer(Lexer* lexer, Token** token_list, int* num_tokens) {
 // Function to parse tokens into an AST
 ASTNode* parseTokensIntoAST(Token* token_list, int num_tokens) {
     // Create the root node
-    ASTNode* root = newASTNode((Token){UNKNOWN, UNKNOWN_TYPE, NULL}, ROOT);
+    Token root_token = {UNKNOWN, UNKNOWN_TYPE, NULL};
+    ASTNode* root = newASTNode(root_token, ROOT);
 
     // Keep track of the current parent node
     ASTNode* currentParent = root;
@@ -315,6 +328,12 @@ ASTNode* parseTokensIntoAST(Token* token_list, int num_tokens) {
                 // If the token value contains a comma, split it into multiple tokens
                 if (strchr(token_list[i].value, ',') != NULL) {
                     char* value = strtok(token_list[i].value, ",");
+                    size_t numTokens = sizeof(tokenNames) / sizeof(tokenNames[0]);
+                    for (int j = 0; j < numTokens; j++) {
+                        if (strcmp(value, tokenNames[j]) == 0) {
+                            break;
+                        }
+                    }
                     while (value != NULL) {
                         Token newToken = {ARGUMENT, ARGUMENT_TYPE, value};
                         newNode = newASTNode(newToken, CHILD);
@@ -337,177 +356,181 @@ ASTNode* parseTokensIntoAST(Token* token_list, int num_tokens) {
                 break;
         }
     }
-
     return root;
 }
 
+// AST Interpreter
+
+void perform_complain();
+void perform_print(char* arguments[]);
+void perform_set(char* arguments[]);
+void perform_add(char* arguments[]);
+void perform_isequal(char* arguments[]);
+void freeAST(ASTNode* root);
+
+
+// Function to execute the commands
+void processNode(ASTNode* root, char* arguments[]){
+    switch (root->token.name) {
+        case PRINT:
+            perform_print(arguments);
+            break;
+        case SET:
+            perform_set(arguments);
+            break;
+        case ADD:
+            perform_add(arguments);
+            break;
+        case ISEQUAL:
+            perform_isequal(arguments);
+            break;
+        case COMPLAIN:
+            perform_complain();
+            break;
+        default:
+            printf("Error, unknown syntax.\n");
+            break;
+    }
+}
+
+
+// Function to transverse the AST
+void interpreter(ASTNode* root){
+    if (root == NULL) {
+        return;
+    }
+
+    printf("root: %s\n", root->token.value);
+
+    if (root->type == ROOT) {
+        for (int i = 0; i < root->numChildNodes; i++) {
+            ASTNode* child = root->childNodes[i];
+            printf("child: %s\n", child->token.value);
+            char * arguments[2] = {NULL, NULL};
+            if (child->token.type == COMMAND) {
+                for (int j = 0; j < child->numChildNodes; j++) {
+                    ASTNode* child_of_child = child->childNodes[j];
+                    printf("child of child: %s\n", child_of_child->token.value);
+                    arguments[j] = child_of_child->token.value;
+                }
+            } else if (child->token.type == MESSAGE_TYPE) {
+                arguments[0] = child->token.value;
+                printf("child_message: %s\n", child->token.value);
+            }
+            processNode(child, arguments);
+        }
+    }
+    freeAST(root);
+}
+
+
+// Function to free the AST when done transversing
+void freeAST(ASTNode* root) {
+    if (root == NULL) {
+        return;
+    }
+    for (int i = 0; i < root->numChildNodes; i++) {
+        freeAST(root->childNodes[i]);
+    }
+    free(root->childNodes);
+    free(root);
+}
+
+
+// Functions of individual commands
 void perform_complain() {
     printf("Complain: This is a generic complaint.\n");
 }
 
-void perform_print(const char* value) {
-    printf("Printing message: %s\n", value);
+void perform_print(char* arguments[]) {
+    char* message = arguments[0];
+    printf("Printing message: %s\n", message);
 }
 
-void perform_set(const char* variable, const char* value) {
+// REVISE THIS FUNCTION
+void perform_set(char* arguments[]) {
+    char* variable = arguments[0];
+    char* value = arguments[1];
     printf("Set: %s = %s\n", variable, value);
 }
 
-void perform_add(int var1,int var2) {
+
+void perform_add(char* arguments[]) {
+    int var1 = atoi(arguments[0]);
+    int var2 = atoi(arguments[1]);
     printf("Add: %d + %d = %d\n", var1, var2, var1+var2);
 }
 
-void perform_iszero(int variable) {
-    if (variable == 0) {
-        printf("IsZero: %d is zero.\n", variable);
+
+void perform_isequal(char* arguments[]) {
+    int var1 = atoi(arguments[0]);
+    int var2 = atoi(arguments[1]);
+    if (var1 == var2) {
+        printf("IsEqual: %d == %d\n", var1, var2);
     } else {
-        printf("IsZero: %d is not zero.\n", variable);
+        printf("IsEqual: %d NOT EQUAL %d\n", var1, var2);
     }
 }
+
 
 int main() {
-    FILE* fp;
-    fp = fopen("test_file.txt", "r");
-    if (fp == NULL) {
-        printf("ERROR RUNNING FILE\n");
-        return 1;
-    }
-
-    fseek(fp, 0, SEEK_END);
-    long file_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    char* contents = (char*)malloc(file_size * sizeof(char));
-    if (contents == NULL) {
-        printf("Memory allocation error for contents\n");
-        fclose(fp);
-        return 1;
-    }
-
-    // Read file contents into the 'contents' buffer
-    fread(contents, sizeof(char), file_size, fp);
-
-    Token* token_list = (Token*)malloc(file_size * sizeof(Token));
-    if (token_list == NULL) {
-        printf("Memory allocation error for tokens\n");
-        free(contents);
-        fclose(fp);
-        return 1;
-    }
-
-    Lexer lexer;
-    int num_tokens = 0;
-    initializeLexer(&lexer, contents);
-    // Parse the file and get the list of tokens and the number of tokens
-    advanceLexer(&lexer, &token_list, &num_tokens); // (ADLT) Chnage name of "advanceLexer()" to "ParseWithLexer()"
-
-    // Generate the AST
-    ASTNode* root = parseTokensIntoAST(token_list, num_tokens);
-
-    // Print the AST tree
-    printAST(root, 0);
-
-    // Run/execute the tokens that are commands (for instance a "MESSAGE" is a token, but not a command)
-    for (int i = 0; i < num_tokens; ++i) {
-        Token token = token_list[i];
-        switch (token.name) {
-            case COMPLAIN:
-                perform_complain();
-                break;
-            case PRINT:
-                if (i + 1 < num_tokens && token_list[i + 1].name == MESSAGE) {
-                    perform_print(token_list[i + 1].value);
-                    i++;
-                }
-                break;
-            case SET:
-                if (i + 1 < num_tokens && token_list[i + 1].name == MESSAGE) {
-                    char* variable_pair = strtok(token_list[i + 1].value, " ");
-
-                    // Assume there are exactly two words
-                    char* variable = variable_pair;
-                    char* value = strtok(NULL, " ");
-
-                    // Remove commas from the words
-                    char* comma = strchr(variable, ',');
-                    if (comma != NULL) {
-                        *comma = '\0'; // Replace the comma with null character
-                    }
-
-                    comma = strchr(value, ',');
-                    if (comma != NULL) {
-                        *comma = '\0'; // Replace the comma with null character
-                    }
-
-                    // Call the function with the separated and comma-removed words
-                    perform_set(variable, value);
-                    i++;
-                }
-                break;
-            case ADD:
-                if (i + 1 < num_tokens && token_list[i + 1].name == MESSAGE) {
-                    char* variable_pair = strtok(token_list[i + 1].value, " ");
-
-                    // Assume there are exactly two words
-                    char* value1_str = variable_pair;
-                    char* value2_str = strtok(NULL, " ");
-
-                    // Remove commas from the words
-                    char* comma = strchr(value1_str, ',');
-                    if (comma != NULL) {
-                        *comma = '\0'; // Replace the comma with null character
-                    }
-
-                    comma = strchr(value2_str, ',');
-                    if (comma != NULL) {
-                        *comma = '\0'; // Replace the comma with null character
-                    }
-
-                    int value1 = atoi(value1_str);
-                    int value2 = atoi(value2_str);
-
-                    // Call the function with the separated and comma-removed words
-                    perform_add(value1, value2);
-                    i++;
-                }
-                break;
-            case ISZERO:
-                if (i + 1 < num_tokens && token_list[i + 1].name == MESSAGE) {
-                    char *endptr; // To check for extra characters in the conversion
-                    int number = strtol(token_list[i + 1].value, &endptr, 10);
-
-                    // Check for conversion errors
-                    if (*endptr != '\0' && *endptr != '\n') {
-                        printf("Conversion failed. Not a valid integer.\n");
-                    } else {
-                        // The conversion was successful
-                        printf("Converted number: %d\n", number);
-
-                        // Now you can check if the number is within a valid range, for example
-                        if (number >= 0 && number <= 100) {
-                            perform_iszero(number);
-                        } else {
-                            printf("Not within the valid range.\n");
-                        }
-                 }
-                    i++;
-                }
-                break;
-            case MESSAGE:
-                break;
-            case ARGUMENT:
-                break;
-            default:
-                printf("Unknown token encountered.\n");
-                break;
+        FILE *fp;
+        fp = fopen("test_file.txt", "r");
+        if (fp == NULL) {
+            printf("ERROR RUNNING FILE\n");
+            return 1;
         }
+
+        fseek(fp, 0, SEEK_END);
+        long file_size = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+
+        char *contents = (char *) malloc(file_size * sizeof(char));
+        if (contents == NULL) {
+            printf("Memory allocation error for contents\n");
+            fclose(fp);
+            return 1;
+        }
+
+        // Read file contents into the 'contents' buffer
+        fread(contents, sizeof(char), file_size, fp);
+
+        Token *token_list = (Token *) malloc(file_size * sizeof(Token));
+        if (token_list == NULL) {
+            printf("Memory allocation error for tokens\n");
+            free(contents);
+            fclose(fp);
+            return 1;
+        }
+
+        Lexer lexer;
+        int num_tokens = 0;
+        initializeLexer(&lexer, contents);
+        // Parse the file and get the list of tokens and the number of tokens
+        advanceLexer(&lexer, &token_list, &num_tokens); // (ADLT) Chnage name of "advanceLexer()" to "ParseWithLexer()"
+
+        // Generate the AST
+        ASTNode *root = parseTokensIntoAST(token_list, num_tokens);
+
+        // Print the AST tree
+        printAST(root, 0);
+
+        // interpreter(root);
+        interpreter(root);
+
+        // Free the memory
+        free(lexer.word);
+        free(contents);
+        free(token_list);
+        fclose(fp);
+
+        return 0;
     }
 
-    // Free the memory
-    free(lexer.word);
-    free(contents);
-    free(token_list);
-    fclose(fp);
-
-    return 0;
-}
+    /* TO DO LIST
+    * Make the set function better
+    * Make the interpreter return errors if syntax incorrect
+    * General error handling
+     * If we want nested commands we have to chnage tree strcuture
+     * Expand command list
+     */
